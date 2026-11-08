@@ -1,0 +1,20 @@
+# Optional operator-owned scanner reference — NOT provisioned
+
+This separate Python 3.13+ process calls a **real, separately isolated ClamAV daemon** over a private Unix socket. It cannot run inside the app's hosted runtime. No engine, database updates, endpoint or credentials are provisioned by this repository. Tests mock the daemon and do not prove antivirus operation.
+
+Official protocol/setup sources reviewed 2026-11-01:
+- https://docs.clamav.net/manual/Usage/ClamdProtocol.html
+- https://docs.clamav.net/manual/Usage/Scanning.html
+- https://docs.clamav.net/manual/Usage/SignatureManagement.html
+- https://docs.clamav.net/manual/Installing/Docker.html
+
+## Operator setup (no paid signup or public clamd)
+1. On your own reviewed host, install a maintained ClamAV release from the official distribution. Pin the chosen OS package/container digest in your deployment record; do not use an unreviewed floating image. Allow roughly 4 GiB engine memory and extra reload headroom; validate actual usage.
+2. Run freshclam separately with only definition-update network access. Run clamd unprivileged in a restricted container/network namespace, no application credentials, read-only root filesystem, private writable scan scratch volume with quota/noexec, no public TCP listener. Configure `LocalSocket /run/clamav/clamd.ctl`, `StreamMaxLength 10M`, bounded `MaxThreads`, `ReadTimeout 12`, `CommandReadTimeout 12`, `AlertExceedsMax yes`, and bounded archive recursion/file counts/time. Never disable heuristic-limit alerts to manufacture clean results. Review actual supported settings against your pinned release.
+3. Expose the socket only to this bridge user. Start bridge unprivileged with read-only application files, no app storage mounts, no outbound network access, process/memory limits and a supervised kill deadline (request read + three daemon operations <=48 seconds, app aborts at15). Two connections maximum, backlog8; request bodies <=10 MB. Reverse proxy must bound headers/request deadlines, prevent slow-client exhaustion, and terminate TLS; only `/scan` reaches loopback8091. No public direct bridge/clamd ports.
+4. Create one strong shared value using an operator password manager. Configure it privately as `TV_SCANNER_SECRET` on this host and in Project Settings → Secrets; never commit it or put it in commands/history/logs. Configure the private socket through `CLAMD_SOCKET`. `python3 services/scanner/reference.py` starts loopback-only bridge. Use a separately owned TLS proxy; localhost HTTP is not accepted by the app adapter.
+5. VERSION must contain a nonzero running database serial and parseable database date; bridge assumes UTC (host must run UTC), rejects age>24h or >5min future, missing metadata, changed database during scan, engine failures/unknown replies/timeouts. A date is engine-reported metadata, not proof definitions are uncompromised. INSTREAM replies must be exactly `stream: OK` or a bounded `... FOUND`; error never becomes clean. Content is sent only to isolated clamd, never executed by this process.
+6. On the isolated host run synthetic benign TXT and **EICAR** tests through HTTPS, verify malicious detection, exact signatures/digest/size/nonce, stale/missing definitions, engine-stop/timeouts, concurrency and daemon limits. Obtain EICAR only from its official source; do not scan confidential files until operator privacy/retention approval. These real-engine tests are **UNRUN here** (clamd/clamscan/freshclam/container runtime absent).
+7. Only after real validation and approval configure app server secrets `TV_SCANNER_URL`, `TV_SCANNER_SECRET`, `TV_SCANNER_APPROVED=yes`. Endpoint URL must have no userinfo/query credentials. All verdicts still remain quarantined; this setup is not permission to release bytes.
+
+Transport protocol tests: `python3 -m unittest discover -s services/scanner -p 'test_*.py'`. Environment names in `env.example` are examples only. No working credentials, live definitions, malware certification or public service is supplied.

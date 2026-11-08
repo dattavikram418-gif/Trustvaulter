@@ -1,0 +1,27 @@
+# Render Blueprint for a self-managed TrustVault deployment (Node web service).
+# Verified locally on 2026-11-07: `NITRO_PRESET=node-server` build exits 0 and `node .output/server/index.mjs`
+# serves HTTP 200 on $PORT. Not deployed to Render by the authors; review plan/region before applying.
+services:
+  - type: web
+    name: trustvault
+    runtime: node
+    # Choose your own plan in the Render dashboard; no plan is assumed here.
+    buildCommand: npx --yes bun@1.4.4 install --frozen-lockfile && NITRO_PRESET=node-server npx --yes bun@1.4.4 run build
+    startCommand: node .output/server/index.mjs
+    healthCheckPath: /sign-in-help
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Browser values are inlined at BUILD time, so set them before the first build.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      # Server runtime values (same backend). Never use VITE_ for private credentials.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      # Server-only. Needed so signed-out request failures can be audited; without it those requests return 503.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

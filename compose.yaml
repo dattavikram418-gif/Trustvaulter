@@ -1,0 +1,44 @@
+# TrustVault local single-instance baseline (assessment use only, not production).
+# Status: authored 2026-11-05; Docker is NOT available in the authoring sandbox, so this file
+# has not been run there. The same PostgreSQL 17.11 + test commands were verified with a native
+# 17.11 cluster instead (see docs/BACKEND_STATUS.md).
+#
+#   docker compose up -d --wait testdb
+#   TV_TEST_DATABASE_URL=postgres://tv@127.0.0.1:55432/tv_test bun run test:db
+#   docker compose down -v        # disposable: deletes the test database volume
+#
+# The test DB is bound to 127.0.0.1 only, uses trust auth and must never hold real data.
+# The app itself still uses the managed Lovable Cloud auth/database (`bun run dev`); there is
+# no local Auth server, so this compose file does not make the whole product run offline.
+services:
+  testdb:
+    image: postgres:17.11@sha256:3b0cda93be7c8dba2ed484d19393d93845dc3dafb88973e248ba8e6d99d784e1
+    environment:
+      POSTGRES_USER: tv
+      POSTGRES_DB: tv_test
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "tv", "-d", "tv_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Optional reference malware engine (profile "scanner"). UNRUN: no container runtime here.
+  # Exposes clamd only on a private socket volume; no TCP port is published. The Python bridge
+  # (services/scanner/reference.py) runs separately and the app adapter requires an
+  # operator-owned HTTPS endpoint, so starting this does NOT connect scanning to the app and
+  # never enables downloads. See services/scanner/README.md.
+  clamd:
+    profiles: ["scanner"]
+    image: clamav/clamav:1.4.3@sha256:75fb5fd95fcbe1d7e6d240c369c1572b686ee2c95949d1042b5148de8eddebb4
+    volumes:
+      - clamd-socket:/run/clamav
+    read_only: false
+    mem_limit: 4g
+
+volumes:
+  clamd-socket:
